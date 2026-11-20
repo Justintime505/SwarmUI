@@ -35,7 +35,7 @@ function groupByDay(images: HistoryImage[]): DaySection[] {
 
 /** Screen for browsing and managing saved images: a timeline by day, filtered to everything, starred, or one folder. */
 export function GalleryScreen({ onBack }: { onBack: () => void }) {
-  const { path, folder, starredOnly, images, starred, loading, error, load } = useGallery()
+  const { path, folder, starredOnly, batch, images, starred, loading, error, load } = useGallery()
   const [shown, setShown] = useState(PAGE_SIZE)
   const [viewing, setViewing] = useState<number | null>(null)
   const [foldersOpen, setFoldersOpen] = useState(false)
@@ -83,7 +83,7 @@ export function GalleryScreen({ onBack }: { onBack: () => void }) {
   }
 
   /** Switches the gallery to another view. */
-  const show = (view: { folder?: string; starredOnly?: boolean }) => {
+  const show = (view: { folder?: string; starredOnly?: boolean; batch?: null }) => {
     stopSelecting()
     load(view)
   }
@@ -170,7 +170,7 @@ export function GalleryScreen({ onBack }: { onBack: () => void }) {
       </header>
 
       <div role="group" aria-label="Show" className="flex shrink-0 gap-2 px-3 py-2">
-        <button type="button" aria-pressed={!inFolder} onClick={() => show({ folder: '' })} className={chipClass(!inFolder)}>
+        <button type="button" aria-pressed={!inFolder && !batch} onClick={() => show({ folder: '', batch: null })} className={chipClass(!inFolder && !batch)}>
           All
         </button>
         <button type="button" aria-pressed={inFolder} aria-haspopup="dialog" onClick={() => setFoldersOpen(true)} className={cn(chipClass(inFolder), 'min-w-0 shrink')}>
@@ -184,11 +184,23 @@ export function GalleryScreen({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
+      {batch && (
+        <div className="mx-3 mb-2 flex min-h-11 items-center gap-2 rounded-2xl bg-accent/15 pr-1 pl-3.5 text-sm">
+          <span className="min-w-0 flex-1 truncate">
+            Batch: {batch.label || '(no prompt)'}
+            <span className="ml-2 text-muted">{images.length}</span>
+          </span>
+          <Button variant="ghost" className="text-accent" onClick={() => show({ batch: null })}>
+            Show all
+          </Button>
+        </div>
+      )}
+
       {(error || actionError) && <p role="alert" className="mx-3 mb-2 rounded-xl bg-danger/15 p-3 text-sm text-danger">{error || actionError}</p>}
 
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-4">
         {!loading && !error && images.length == 0 && (
-          <p className="px-8 py-16 text-center text-muted">{starredOnly ? (inFolder ? 'No starred images in this folder.' : 'No starred images yet.') : inFolder ? 'This folder is empty.' : 'No images yet.'}</p>
+          <p className="px-8 py-16 text-center text-muted">{batch ? (starredOnly ? 'No starred images from this batch.' : 'No images from this batch are left.') : starredOnly ? (inFolder ? 'No starred images in this folder.' : 'No starred images yet.') : inFolder ? 'This folder is empty.' : 'No images yet.'}</p>
         )}
         {sections.map((section) => (
           <section key={`${section.day}-${section.start}`} aria-label={dayLabel(section.day)}>
@@ -241,7 +253,7 @@ export function GalleryScreen({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <FolderList open={foldersOpen} onOpenChange={setFoldersOpen} current={folder} onChoose={(name) => show({ folder: name })} />
+      <FolderList open={foldersOpen} onOpenChange={setFoldersOpen} current={folder} onChoose={(name) => show({ folder: name, batch: null })} />
 
       {viewing != null && images[viewing] && (
         <ImageViewer

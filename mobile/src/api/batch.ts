@@ -11,6 +11,10 @@ export type BatchJob = {
   failed: number
   /** Start of the prompt, for display. */
   prompt: string
+  /** The whole prompt as it was written. */
+  full_prompt: string
+  /** Top-level output folder the batch saves into, or an empty string if it is not a fixed one. */
+  folder: string
   model: string
   /** Unix times in seconds; zero when not reached yet. */
   created: number

@@ -15,18 +15,16 @@ const MEMORY_KEY = 'swarm-mobile-batches'
 type Memory = {
   /** The batch last seen queued or running, with how far it had got. */
   watching: { id: string; profile: string; done: number; total: number } | null
-  /** Which output folder each batch was started with, so "View" can open the gallery there. */
-  folders: Record<string, string>
 }
 
 /** Reads the remembered batch details, tolerating missing or damaged storage. */
 function readMemory(): Memory {
   try {
     const parsed = JSON.parse(localStorage.getItem(MEMORY_KEY) || '{}')
-    return { watching: parsed.watching || null, folders: parsed.folders || {} }
+    return { watching: parsed.watching || null }
   }
   catch {
-    return { watching: null, folders: {} }
+    return { watching: null }
   }
 }
 
@@ -53,8 +51,6 @@ type BatchState = {
   cancel: (id: string) => Promise<void>
   dismiss: (id: string) => Promise<void>
   dismissNotice: () => void
-  /** The output folder a batch was started with on this device, or undefined if unknown. */
-  folderOf: (id: string) => string | undefined
 }
 
 let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -89,12 +85,6 @@ export const useBatches = create<BatchState>()((set, get) => ({
     else if (memory.watching && memory.watching.profile == profile) {
       memory.watching = null
     }
-    // Forget folders of batches the server no longer lists.
-    for (const id of Object.keys(memory.folders)) {
-      if (!jobs.some((j) => j.id == id)) {
-        delete memory.folders[id]
-      }
-    }
     writeMemory(memory)
     set({ jobs, supported: true, notice })
     if (active && document.visibilityState == 'visible') {
@@ -103,11 +93,7 @@ export const useBatches = create<BatchState>()((set, get) => ({
   },
 
   start: async (count) => {
-    const settings = useStore.getState()
-    const id = await startBatch(count, buildParams(settings, { save: true }))
-    const memory = readMemory()
-    memory.folders[id] = settings.folder
-    writeMemory(memory)
+    await startBatch(count, buildParams(useStore.getState(), { save: true }))
     await get().load()
   },
 
@@ -127,8 +113,6 @@ export const useBatches = create<BatchState>()((set, get) => ({
   },
 
   dismissNotice: () => set({ notice: null }),
-
-  folderOf: (id) => readMemory().folders[id],
 }))
 
 // Catch up as soon as the app comes back to the foreground, e.g. after the phone was locked.

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { listImages, type HistoryImage } from '@/api/images'
+import { imageBatchId, listImages, type HistoryImage } from '@/api/images'
 
 /** Top-level output folders SwarmUI or ComfyUI manage themselves; not offered as places to save into. */
 const SYSTEM_FOLDERS = ['raw', 'Starred', 'inputs']
@@ -23,7 +23,9 @@ type GalleryState = {
   folder: string
   /** When true, only starred images (within `folder`) are shown. */
   starredOnly: boolean
-  /** The server path the current view lists, derived from `folder` and `starredOnly`. */
+  /** When set, only images made by this background batch are shown. `label` is the start of its prompt. */
+  batch: { id: string; label: string } | null
+  /** Identifies the current view (server path plus batch filter), used to ignore answers that arrive after the view changed. */
   path: string
   images: HistoryImage[]
   /** Top-level folders that exist on the server. */
@@ -38,7 +40,7 @@ type GalleryState = {
   loading: boolean
   error: string | null
   /** Loads the current view, or switches to another one first. Also refreshes the folder list. */
-  load: (view?: { folder?: string; starredOnly?: boolean }) => Promise<void>
+  load: (view?: { folder?: string; starredOnly?: boolean; batch?: { id: string; label: string } | null }) => Promise<void>
   /** Refreshes only the list of folders (used by the folder picker). */
   loadFolders: () => Promise<void>
 }
@@ -82,6 +84,7 @@ function starredOriginals(files: HistoryImage[]): Set<string> {
 export const useGallery = create<GalleryState>()((set, get) => ({
   folder: '',
   starredOnly: false,
+  batch: null,
   path: '',
   images: [],
   serverFolders: [],
@@ -94,15 +97,20 @@ export const useGallery = create<GalleryState>()((set, get) => ({
     const starredOnly = view?.starredOnly ?? get().starredOnly
     // SwarmUI keeps starred copies under Starred/<original path>, so starred-in-a-folder is a listing of Starred/<folder>.
     const target = starredOnly ? (folder ? `Starred/${folder}` : 'Starred') : folder
-    set({ loading: true, error: null, folder, starredOnly, path: target })
+    const batch = view && 'batch' in view ? view.batch || null : get().batch
+    const viewKey = batch ? `${target}#${batch.id}` : target
+    set({ loading: true, error: null, folder, starredOnly, batch, path: viewKey })
     try {
       const data = await listImages(target)
-      // Ignore the answer if the user switched folder while this was loading.
-      if (get().path != target) {
+      // Ignore the answer if the user switched view while this was loading.
+      if (get().path != viewKey) {
         return
       }
       // ComfyUI's own input and temp folders are not generated images.
-      const images = data.files.filter((f) => !f.src.startsWith('inputs/') && !f.src.startsWith('_'))
+      let images = data.files.filter((f) => !f.src.startsWith('inputs/') && !f.src.startsWith('_'))
+      if (batch) {
+        images = images.filter((f) => imageBatchId(f) == batch.id)
+      }
       set({ images, loading: false })
       if (target == '') {
         set({ serverFolders: topLevel(data.folders), starred: starredOriginals(data.files), folderInfo: summarise(data.files) })
@@ -112,7 +120,7 @@ export const useGallery = create<GalleryState>()((set, get) => ({
       }
     }
     catch (err) {
-      if (get().path == target) {
+      if (get().path == viewKey) {
         set({ loading: false, error: err instanceof Error ? err.message : String(err) })
       }
     }

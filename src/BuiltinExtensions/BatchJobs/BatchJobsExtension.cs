@@ -50,6 +50,30 @@ public static class BatchJobRules
         return input;
     }
 
+    /// <summary>Key in an image's extra metadata that records which batch made it.</summary>
+    public const string BatchIdMetadataKey = "batch_id";
+
+    /// <summary>Marks a batch's input so every image it makes records the batch ID in its metadata, keeping any extra metadata the client sent.</summary>
+    public static void StampBatchId(JObject input, string batchId)
+    {
+        if (input["extra_metadata"] is not JObject extra)
+        {
+            extra = [];
+            input["extra_metadata"] = extra;
+        }
+        extra[BatchIdMetadataKey] = batchId;
+    }
+
+    /// <summary>
+    /// Returns the top-level output folder an output path format saves into, eg "Portraits" for "Portraits/[year]-[prompt]".
+    /// Returns an empty string when the first part is not a fixed name.
+    /// </summary>
+    public static string TopFolderOf(string outPathFormat)
+    {
+        string first = (outPathFormat ?? "").Replace('\\', '/').TrimStart('/').Before('/');
+        return first.Contains('[') || !(outPathFormat ?? "").Contains('/') ? "" : first;
+    }
+
     /// <summary>Returns a short single-line description of a prompt, for listing a job.</summary>
     public static string Summarize(string prompt, int maxLength = 80)
     {
@@ -84,6 +108,12 @@ public class BatchJob
 
     /// <summary>Short form of the prompt, for display.</summary>
     public string Prompt;
+
+    /// <summary>The whole prompt exactly as the user wrote it, so it can be copied back out.</summary>
+    public string FullPrompt;
+
+    /// <summary>The top-level output folder the batch saves into, or an empty string if it is not a fixed folder.</summary>
+    public string Folder;
 
     /// <summary>Name of the model, for display.</summary>
     public string Model;
@@ -122,6 +152,8 @@ public class BatchJob
                 ["done"] = Done,
                 ["failed"] = Failed,
                 ["prompt"] = Prompt,
+                ["full_prompt"] = FullPrompt,
+                ["folder"] = Folder,
                 ["model"] = Model,
                 ["created"] = CreatedTime,
                 ["started"] = StartedTime,
@@ -396,13 +428,14 @@ public class BatchJobsExtension : Extension
             return new JObject() { ["error"] = $"A batch must be between 1 and {BatchJobRules.MaxImagesPerBatch} images." };
         }
         JObject input = BatchJobRules.PrepareInput(rawInput);
-        string prompt, model;
+        string prompt, model, outPathFormat;
         try
         {
             // Check the settings now, so a bad model or parameter is reported straight away rather than as failed images later.
             T2IParamInput parsed = T2IAPI.RequestToParams(session, (JObject)input.DeepClone());
             prompt = parsed.Get(T2IParamTypes.Prompt, "");
             model = parsed.Get(T2IParamTypes.Model)?.Name ?? "";
+            outPathFormat = parsed.Get(T2IParamTypes.OverrideOutpathFormat, session.User.Settings.OutPathBuilder.Format);
         }
         catch (SwarmReadableErrorException ex)
         {
@@ -420,9 +453,12 @@ public class BatchJobsExtension : Extension
             Total = count,
             Input = input,
             Prompt = BatchJobRules.Summarize(prompt),
+            FullPrompt = rawInput.Value<string>("prompt") ?? prompt,
+            Folder = BatchJobRules.TopFolderOf(outPathFormat),
             Model = model,
             CreatedTime = Now
         };
+        BatchJobRules.StampBatchId(job.Input, job.ID);
         lock (jobs)
         {
             if (jobs.Count(j => !j.IsEnded) >= BatchJobRules.MaxActiveJobsPerUser)
@@ -447,6 +483,8 @@ public class BatchJobsExtension : Extension
                     "done": 12,
                     "failed": 0,
                     "prompt": "start of the prompt...",
+                    "full_prompt": "the whole prompt as written",
+                    "folder": "Portraits", // top-level output folder, or "" if not a fixed one
                     "model": "model name",
                     "created": 1700000000,
                     "started": 1700000000,

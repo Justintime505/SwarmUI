@@ -56,6 +56,21 @@ export function parseParams(metadata: string | null): Record<string, unknown> | 
   }
 }
 
+/** The ID of the background batch that made an image, or null if it was not made by one. */
+export function imageBatchId(image: HistoryImage): string | null {
+  // Cheap check first: most images have no batch ID, and parsing a thousand metadata blobs is wasted work.
+  if (!image.metadata || !image.metadata.includes('"batch_id"')) {
+    return null
+  }
+  try {
+    const id = JSON.parse(image.metadata).sui_extra_data?.batch_id
+    return typeof id == 'string' ? id : null
+  }
+  catch {
+    return null
+  }
+}
+
 /** The day an image was made, as `YYYY-MM-DD`, read from its path or its metadata. Empty if unknown. */
 export function imageDay(image: HistoryImage): string {
   // Both the default layout (raw/2026-11-19/...) and the app's folder layout (Folder/2026-11-19-...) carry the date in the path.

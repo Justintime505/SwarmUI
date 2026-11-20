@@ -6,6 +6,42 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Copies text to the clipboard. Resolves to whether it worked.
+ * The modern clipboard API only exists on HTTPS pages, and this app is usually opened over plain HTTP on the home network,
+ * so it falls back to the older select-and-copy method.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  }
+  catch {
+    // Fall through to the older method.
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  // An open sheet keeps keyboard focus inside itself, so the helper field has to live inside the sheet to be selectable.
+  const host = document.activeElement?.closest('[role="dialog"]') || document.body
+  host.appendChild(area)
+  area.select()
+  area.setSelectionRange(0, text.length)
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  }
+  catch {
+    ok = false
+  }
+  area.remove()
+  return ok
+}
+
 /** Reads a Blob or File into a `data:` URL. */
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

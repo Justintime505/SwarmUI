@@ -109,7 +109,7 @@ export function ImageViewer({ images, index, starred, onIndex, onClose, onStar, 
           </button>
         )}
         {showInfo && (
-          <div className="absolute inset-x-2 bottom-2 max-h-[60%] overflow-y-auto overscroll-contain rounded-2xl bg-surface/95 p-3.5 text-sm backdrop-blur">
+          <div className="selectable absolute inset-x-2 bottom-2 max-h-[60%] overflow-y-auto overscroll-contain rounded-2xl bg-surface/95 p-3.5 text-sm backdrop-blur">
             {!params && <p className="text-muted">No generation details are stored with this image.</p>}
             {params && (
               <>

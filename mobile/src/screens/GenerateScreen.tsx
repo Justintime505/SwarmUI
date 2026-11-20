@@ -218,7 +218,6 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
   // Holding Generate (or Cancel) opens the extra options the desktop UI keeps behind its arrow button.
   const longPress = useLongPress(() => setSheet('menu'))
   const [batchView, setBatchView] = useState<'start' | 'list'>('start')
-  const folderOfBatch = useBatches((s) => s.folderOf)
 
   /** Opens the batch sheet on its form or its list. */
   const openBatches = (view: 'start' | 'list') => {
@@ -226,12 +225,11 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
     setSheet('batch')
   }
 
-  /** Opens the gallery on the folder a batch saved into. */
+  /** Opens the gallery showing only the images a batch made. */
   const viewBatchImages = (job: BatchJob) => {
-    const batchFolder = folderOfBatch(job.id)
     setSheet(null)
-    // Batches started without a folder choice save into SwarmUI's default "raw" folder.
-    useGallery.getState().load({ folder: batchFolder == undefined ? '' : batchFolder || 'raw', starredOnly: false })
+    // Listing just the batch's folder keeps the request small; the gallery then filters to the batch's own images.
+    useGallery.getState().load({ folder: job.folder, starredOnly: false, batch: { id: job.id, label: job.prompt } })
     onOpenGallery()
   }
   const [width, height] = sizeFor(aspect, side)

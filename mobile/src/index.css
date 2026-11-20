@@ -30,6 +30,18 @@ body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  /* Labels and buttons are not selectable, as in a native app: otherwise a long press brings up the phone's copy/paste menu. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Text the user types, and text marked as worth copying, stays selectable. */
+input,
+textarea,
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* 16px minimum on inputs stops mobile browsers zooming in on focus. */

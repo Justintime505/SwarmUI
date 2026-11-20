@@ -1,4 +1,4 @@
-import { CircleStop, Images, Layers3, X } from 'lucide-react'
+import { Check, CircleStop, Copy, Images, Layers3, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { serverUrl } from '@/api/client'
 import { isActive, type BatchJob } from '@/api/batch'
@@ -6,7 +6,7 @@ import { modelLabel } from '@/api/models'
 import { useBatches } from '@/batch-store'
 import { Button } from '@/components/ui/button'
 import { Sheet } from '@/components/ui/sheet'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { useModels } from '@/models-store'
 import { sizeFor, useStore } from '@/store'
 
@@ -42,7 +42,14 @@ function JobCard({ job, onView }: { job: BatchJob; onView: (job: BatchJob) => vo
   const cancel = useBatches((s) => s.cancel)
   const dismiss = useBatches((s) => s.dismiss)
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState<'yes' | 'failed' | null>(null)
   const active = isActive(job)
+
+  /** Copies the batch's whole prompt to the clipboard and shows whether it worked. */
+  const copyPrompt = async () => {
+    setCopied((await copyText(job.full_prompt || job.prompt)) ? 'yes' : 'failed')
+    setTimeout(() => setCopied(null), 2000)
+  }
 
   /** Runs a cancel or dismiss, ignoring a failure: the list reloads either way and shows the true state. */
   const act = async (work: (id: string) => Promise<void>) => {
@@ -80,6 +87,12 @@ function JobCard({ job, onView }: { job: BatchJob; onView: (job: BatchJob) => vo
         </div>
       )}
       {job.error && job.state != 'finished' && <p className="mt-2 break-words text-sm text-danger">{job.error}</p>}
+      <div className="mt-2 flex items-center gap-2">
+        <Button className="min-w-0" onClick={copyPrompt} disabled={!job.full_prompt && !job.prompt}>
+          {copied == 'yes' ? <Check className="size-5 text-accent" /> : <Copy className="size-5" />}
+          {copied == 'yes' ? 'Copied' : copied == 'failed' ? 'Could not copy' : 'Copy prompt'}
+        </Button>
+      </div>
       {job.recent_images.length > 0 && (
         <div className="mt-2 flex items-center gap-1.5">
           <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">

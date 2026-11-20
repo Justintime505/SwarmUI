@@ -71,6 +71,31 @@ public class BatchJobRulesTests : SwarmUITest
         Assert.That(sent.Value<int>("images"), Is.EqualTo(4));
     }
 
+    /// <summary>Every image of a batch records the batch ID, without losing extra metadata the client sent.</summary>
+    [Test]
+    public void BatchIdIsStampedIntoMetadata()
+    {
+        JObject plain = BatchJobRules.PrepareInput(new JObject() { ["prompt"] = "a cat" });
+        BatchJobRules.StampBatchId(plain, "abc123");
+        Assert.That(plain["extra_metadata"].Value<string>(BatchJobRules.BatchIdMetadataKey), Is.EqualTo("abc123"));
+        JObject withExtra = BatchJobRules.PrepareInput(new JObject() { ["prompt"] = "a cat", ["extra_metadata"] = new JObject() { ["note"] = "keep me" } });
+        BatchJobRules.StampBatchId(withExtra, "abc123");
+        Assert.That(withExtra["extra_metadata"].Value<string>("note"), Is.EqualTo("keep me"));
+        Assert.That(withExtra["extra_metadata"].Value<string>(BatchJobRules.BatchIdMetadataKey), Is.EqualTo("abc123"));
+    }
+
+    /// <summary>The output folder is the fixed first part of the path format, when there is one.</summary>
+    [TestCase("Portraits/[year]-[month]-[day]-[prompt]", "Portraits")]
+    [TestCase("raw/[year]-[month]-[day]/[hour][minute]-[prompt]", "raw")]
+    [TestCase("[year]/[prompt]", "")]
+    [TestCase("[prompt]", "")]
+    [TestCase("justafilename", "")]
+    [TestCase(null, "")]
+    public void TopFolderOfPathFormat(string format, string expected)
+    {
+        Assert.That(BatchJobRules.TopFolderOf(format), Is.EqualTo(expected));
+    }
+
     /// <summary>Prompt summaries are single-line and capped in length.</summary>
     [Test]
     public void SummariesAreShortAndSingleLine()
