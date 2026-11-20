@@ -3,7 +3,9 @@ import { persist } from 'zustand/middleware'
 import { api } from '@/api/client'
 import { startGeneration, type GenStatus } from '@/api/generate'
 import { cleanModelName, type SwarmModel } from '@/api/models'
+import { withTags } from '@/lib/tags'
 import { fileToScaledDataUrl } from '@/lib/utils'
+import { tagGroupsFor } from '@/tags-store'
 
 /** Aspect ratios offered, with SwarmUI's reference size for each at a 512 base (see T2IParamTypes.AspectRatioToSizeReference). */
 export const ASPECTS: Record<string, [number, number]> = {
@@ -42,14 +44,16 @@ export type LoraChoice = { name: string; weight: number }
 
 /**
  * Builds the SwarmUI generation parameters from the user's current choices: prompt, model, size, starting image, mask, LoRAs.
+ * The tags remembered for the model and LoRAs are added in front of the prompt and negative prompt here; `s.prompt` stays as typed.
  * Used by normal generations and by batches, so both send the same thing. The caller adds `images` and `seed`.
  * `save` false leaves out the output folder, for images that are not kept.
  */
 export function buildParams(s: BuildSource, options: { save: boolean }): Record<string, unknown> {
   const [width, height] = sizeFor(s.aspect, s.side)
+  const tags = tagGroupsFor(s.model, s.loras, s.tagsOff).filter((g) => g.on)
   const params: Record<string, unknown> = {
-    prompt: s.prompt,
-    negativeprompt: s.negativePrompt,
+    prompt: withTags(tags.map((g) => g.positive), s.prompt),
+    negativeprompt: withTags(tags.map((g) => g.negative), s.negativePrompt),
     model: s.model,
     steps: s.steps,
     cfgscale: s.cfgScale,
@@ -92,6 +96,8 @@ type Settings = {
   images: number
   aspect: string
   loras: LoraChoice[]
+  /** Keys of the tag groups (see `tagGroupKey`) the user switched off: that model's remembered tags are not added to the prompt. */
+  tagsOff: string[]
   /** 0 to 1: how far a generation may move away from the starting image. */
   initCreativity: number
   /** Output folder for new images. Empty means SwarmUI's default (raw/, by date). */
@@ -147,6 +153,8 @@ type Actions = {
   selectModel: (model: SwarmModel) => void
   toggleLora: (name: string, defaultWeight: number) => void
   setLoraWeight: (name: string, weight: number) => void
+  /** Switches a model's remembered tags off or back on. */
+  toggleTags: (key: string) => void
   setInitImage: (dataUrl: string | null, width?: number, height?: number) => void
   setMask: (dataUrl: string | null, strokes: MaskStroke[]) => void
   /** Loads an image from a URL as the starting image. Resolves to false (and sets an error) if it cannot be loaded. */
@@ -180,7 +188,8 @@ let replacingRun = false
 
 /** The settings that affect what a preview looks like, as one comparable string. */
 function previewKey(s: Settings & Runtime): string {
-  return JSON.stringify([s.prompt, s.negativePrompt, s.model, s.steps, s.cfgScale, s.seed, s.aspect, s.loras, s.initCreativity, !!s.initImage, s.maskImage?.length])
+  const built = buildParams(s, { save: false })
+  return JSON.stringify([built.prompt, built.negativeprompt, s.model, s.steps, s.cfgScale, s.seed, s.aspect, s.loras, s.initCreativity, !!s.initImage, s.maskImage?.length])
 }
 
 /** Describes the queue state in plain words. */
@@ -210,6 +219,7 @@ export const useStore = create<Settings & Runtime & Actions>()(
       images: 1,
       aspect: '1:1',
       loras: [],
+      tagsOff: [],
       initCreativity: 0.6,
       folder: '',
       customFolders: [],
@@ -265,6 +275,11 @@ export const useStore = create<Settings & Runtime & Actions>()(
 
       setLoraWeight: (name, weight) => {
         set({ loras: get().loras.map((l) => (l.name == name ? { ...l, weight } : l)) })
+      },
+
+      toggleTags: (key) => {
+        const off = get().tagsOff
+        set({ tagsOff: off.includes(key) ? off.filter((k) => k != key) : [...off, key] })
       },
 
       setInitImage: (dataUrl, width, height) => {
@@ -469,6 +484,7 @@ export const useStore = create<Settings & Runtime & Actions>()(
         images: s.images,
         aspect: s.aspect,
         loras: s.loras,
+        tagsOff: s.tagsOff,
         initCreativity: s.initCreativity,
         folder: s.folder,
         customFolders: s.customFolders,

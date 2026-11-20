@@ -24,8 +24,11 @@ public static class BatchJobRules
     /// <summary>How many of a job's most recent image paths are kept for display.</summary>
     public const int RecentImagesKept = 8;
 
+    /// <summary>Optional key a client may send with the prompt as the user typed it, shown in the batch list in place of the full prompt (which may have model tags added).</summary>
+    public const string DisplayPromptKey = "display_prompt";
+
     /// <summary>Keys removed from a batch's input: the session belongs to the caller, and the rest would change how many images one request makes or stop them being saved.</summary>
-    public static readonly string[] StrippedKeys = ["session_id", "count", "images", "batchsize", "seed", "donotsave"];
+    public static readonly string[] StrippedKeys = ["session_id", "count", "images", "batchsize", "seed", "donotsave", DisplayPromptKey];
 
     /// <summary>Returns whether a requested image count is allowed.</summary>
     public static bool IsValidCount(int count)
@@ -445,6 +448,7 @@ public class BatchJobsExtension : Extension
         {
             return new JObject() { ["error"] = "No model is selected." };
         }
+        string displayPrompt = rawInput.TryGetValue(BatchJobRules.DisplayPromptKey, out JToken displayToken) && displayToken.Type == JTokenType.String ? displayToken.Value<string>() : null;
         List<BatchJob> jobs = GetJobs(session.User.UserID);
         BatchJob job = new()
         {
@@ -452,8 +456,8 @@ public class BatchJobsExtension : Extension
             UserID = session.User.UserID,
             Total = count,
             Input = input,
-            Prompt = BatchJobRules.Summarize(prompt),
-            FullPrompt = rawInput.Value<string>("prompt") ?? prompt,
+            Prompt = BatchJobRules.Summarize(displayPrompt ?? prompt),
+            FullPrompt = displayPrompt ?? rawInput.Value<string>("prompt") ?? prompt,
             Folder = BatchJobRules.TopFolderOf(outPathFormat),
             Model = model,
             CreatedTime = Now

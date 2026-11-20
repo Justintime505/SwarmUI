@@ -93,7 +93,9 @@ export const useBatches = create<BatchState>()((set, get) => ({
   },
 
   start: async (count) => {
-    await startBatch(count, buildParams(useStore.getState(), { save: true }))
+    const settings = useStore.getState()
+    // The prompt sent has the models' tags added; `display_prompt` tells the server what was typed, for the batch list and "Copy prompt".
+    await startBatch(count, { ...buildParams(settings, { save: true }), display_prompt: settings.prompt })
     await get().load()
   },
 

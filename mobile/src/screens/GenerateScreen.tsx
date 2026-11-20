@@ -12,6 +12,7 @@ import { ModelPicker } from '@/components/ModelPicker'
 import { ModelThumb } from '@/components/ModelThumb'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { SettingsSheet } from '@/components/SettingsSheet'
+import { TagsRow, TagsSheet } from '@/components/TagsSheet'
 import { Button } from '@/components/ui/button'
 import { isActive, type BatchJob } from '@/api/batch'
 import { useBatches } from '@/batch-store'
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils'
 import { useModels } from '@/models-store'
 import { ASPECTS, sizeFor, useStore } from '@/store'
 
-type SheetName = 'model' | 'settings' | 'loras' | 'init' | 'mask' | 'folder' | 'menu' | 'batch' | null
+type SheetName = 'model' | 'settings' | 'loras' | 'init' | 'mask' | 'folder' | 'menu' | 'batch' | 'tags' | null
 
 /** Small outline showing an aspect ratio's shape. */
 function AspectIcon({ aspect }: { aspect: string }) {
@@ -347,6 +348,8 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
           className="max-h-36 min-h-[4.25rem] w-full resize-none rounded-2xl bg-surface p-3.5 leading-snug outline-none [field-sizing:content] placeholder:text-muted focus:ring-1 focus:ring-accent"
         />
 
+        <TagsRow onEdit={() => setSheet('tags')} />
+
         <BatchBanner onOpen={() => openBatches('list')} onView={viewBatchImages} />
         {(forever || previews) && (
           <div className="flex min-h-11 items-center gap-2 rounded-2xl bg-accent/15 pr-1 pl-3.5 text-sm">
@@ -381,6 +384,7 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
       <ModelPicker {...sheetProps('model')} />
       <SettingsSheet {...sheetProps('settings')} />
       <LoraPicker {...sheetProps('loras')} />
+      <TagsSheet {...sheetProps('tags')} />
       <FolderPicker {...sheetProps('folder')} />
       <GenerateMenu {...sheetProps('menu')} onBatch={() => openBatches('start')} />
       <BatchSheet {...sheetProps('batch')} view={batchView} onViewChange={setBatchView} onViewImages={viewBatchImages} />
