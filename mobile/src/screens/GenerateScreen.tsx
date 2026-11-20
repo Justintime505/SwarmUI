@@ -1,7 +1,8 @@
-import { ChevronDown, Folder, ImagePlus, Images, Layers, RefreshCw, SlidersHorizontal, Sparkles, Square, X } from 'lucide-react'
+import { ChevronDown, Folder, ImagePlus, Images, Layers, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Square, X } from 'lucide-react'
 import { useState } from 'react'
 import { serverUrl } from '@/api/client'
 import { modelLabel } from '@/api/models'
+import { BatchSheet, batchFraction, batchStatusText } from '@/components/BatchSheet'
 import { FolderPicker } from '@/components/FolderPicker'
 import { GenerateMenu } from '@/components/GenerateMenu'
 import { InitImageSheet } from '@/components/InitImageSheet'
@@ -12,12 +13,15 @@ import { ModelThumb } from '@/components/ModelThumb'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { Button } from '@/components/ui/button'
+import { isActive, type BatchJob } from '@/api/batch'
+import { useBatches } from '@/batch-store'
+import { useGallery } from '@/gallery-store'
 import { useLongPress } from '@/lib/use-long-press'
 import { cn } from '@/lib/utils'
 import { useModels } from '@/models-store'
 import { ASPECTS, sizeFor, useStore } from '@/store'
 
-type SheetName = 'model' | 'settings' | 'loras' | 'init' | 'mask' | 'folder' | 'menu' | null
+type SheetName = 'model' | 'settings' | 'loras' | 'init' | 'mask' | 'folder' | 'menu' | 'batch' | null
 
 /** Small outline showing an aspect ratio's shape. */
 function AspectIcon({ aspect }: { aspect: string }) {
@@ -56,14 +60,17 @@ function Stage({ onUseAsStart }: { onUseAsStart: (src: string) => void }) {
   const modelsError = useModels((s) => s.error)
   const loadModels = useModels((s) => s.load)
   const [zoomed, setZoomed] = useState(false)
+  const viewingLive = useStore((s) => s.viewingLive)
   const result = results[current]
-  const shown = running && preview ? preview : result ? serverUrl(result.src) : null
+  // "Live" means the stage is showing the image being generated, not a finished one picked from the rail.
+  const live = running && viewingLive
+  const shown = live && preview ? preview : result ? serverUrl(result.src) : null
 
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl bg-surface">
       {shown && (
-        <button type="button" aria-label="View image full screen" disabled={running} onClick={() => setZoomed(true)} className="block size-full">
-          <img src={shown} alt="" className={cn('size-full object-contain transition-opacity', running && !preview && 'opacity-40')} />
+        <button type="button" aria-label="View image full screen" disabled={live} onClick={() => setZoomed(true)} className="block size-full">
+          <img src={shown} alt="" className={cn('size-full object-contain transition-opacity', live && !preview && 'opacity-40')} />
         </button>
       )}
       {!shown && !modelsError && (
@@ -88,7 +95,7 @@ function Stage({ onUseAsStart }: { onUseAsStart: (src: string) => void }) {
           <div className="absolute inset-x-0 top-0 h-1 bg-black/40">
             <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${Math.max(2, progress * 100)}%` }} />
           </div>
-          {shown && (
+          {shown && live && (
             <div role="status" className="absolute top-3 left-3 rounded-full bg-black/65 px-3 py-1 text-sm backdrop-blur">
               {statusText}
               {progress > 0 && <span className="ml-1.5 tabular-nums">{Math.round(progress * 100)}%</span>}
@@ -97,7 +104,7 @@ function Stage({ onUseAsStart }: { onUseAsStart: (src: string) => void }) {
         </>
       )}
 
-      {result && !running && (
+      {result && !live && (
         <Button className="absolute right-3 bottom-3 bg-black/65 backdrop-blur" onClick={() => onUseAsStart(serverUrl(result.src))}>
           <ImagePlus className="size-5" />
           Use as start
@@ -122,6 +129,62 @@ function Stage({ onUseAsStart }: { onUseAsStart: (src: string) => void }) {
   )
 }
 
+/** Strip above the Generate button showing the state of background batches. Tapping it opens the batch list. */
+function BatchBanner({ onOpen, onView }: { onOpen: () => void; onView: (job: BatchJob) => void }) {
+  const jobs = useBatches((s) => s.jobs)
+  const notice = useBatches((s) => s.notice)
+  const dismissNotice = useBatches((s) => s.dismissNotice)
+  const dismiss = useBatches((s) => s.dismiss)
+  const running = jobs.find((j) => j.state == 'running') || jobs.find(isActive)
+  const queued = jobs.filter((j) => j.state == 'queued' && j != running).length
+  // With nothing going, show the most recently ended batch until it is dismissed.
+  const ended = running ? undefined : [...jobs].sort((a, b) => b.ended - a.ended)[0]
+
+  if (notice) {
+    return (
+      <div role="status" className="flex min-h-11 items-center gap-2 rounded-2xl bg-danger/15 py-1.5 pr-1 pl-3.5 text-sm">
+        <span className="min-w-0 flex-1">{notice}</span>
+        <Button variant="ghost" size="icon" aria-label="Dismiss" onClick={dismissNotice}>
+          <X className="size-5" />
+        </Button>
+      </div>
+    )
+  }
+  if (running) {
+    return (
+      <button type="button" onClick={onOpen} aria-label={`Batch: ${batchStatusText(running)}. Tap for details.`} className="relative min-h-11 overflow-hidden rounded-2xl bg-accent/15 px-3.5 text-left text-sm active:bg-accent/25">
+        <span className="absolute inset-y-0 left-0 bg-accent/25 transition-[width] duration-500" style={{ width: `${batchFraction(running) * 100}%` }} />
+        <span className="relative flex items-center gap-2">
+          <Layers className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            Batch: {batchStatusText(running)}
+            {queued > 0 && ` · ${queued} queued`}
+          </span>
+          <span className="shrink-0 text-accent">Details</span>
+        </span>
+      </button>
+    )
+  }
+  if (ended) {
+    return (
+      <div className="flex min-h-11 items-center gap-1 rounded-2xl bg-surface pr-1 pl-3.5 text-sm">
+        <button type="button" onClick={onOpen} className={cn('min-w-0 flex-1 truncate py-2 text-left', ended.state == 'failed' && 'text-danger')}>
+          Batch: {batchStatusText(ended)}
+        </button>
+        {ended.done > 0 && (
+          <Button variant="ghost" className="text-accent" onClick={() => onView(ended)}>
+            View
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" aria-label="Dismiss batch" onClick={() => dismiss(ended.id).catch(() => {})}>
+          <X className="size-5" />
+        </Button>
+      </div>
+    )
+  }
+  return null
+}
+
 /** The main screen: image on top, options and prompt at the bottom within thumb reach. */
 export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void }) {
   const [sheet, setSheet] = useState<SheetName>(null)
@@ -140,6 +203,10 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
   const current = useStore((s) => s.current)
   const set = useStore((s) => s.set)
   const showResult = useStore((s) => s.showResult)
+  const showLive = useStore((s) => s.showLive)
+  const viewingLive = useStore((s) => s.viewingLive)
+  const preview = useStore((s) => s.preview)
+  const progress = useStore((s) => s.progress)
   const startFromUrl = useStore((s) => s.startFromUrl)
   const folder = useStore((s) => s.folder)
   const generate = useStore((s) => s.generate)
@@ -150,6 +217,23 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
   const togglePreviews = useStore((s) => s.togglePreviews)
   // Holding Generate (or Cancel) opens the extra options the desktop UI keeps behind its arrow button.
   const longPress = useLongPress(() => setSheet('menu'))
+  const [batchView, setBatchView] = useState<'start' | 'list'>('start')
+  const folderOfBatch = useBatches((s) => s.folderOf)
+
+  /** Opens the batch sheet on its form or its list. */
+  const openBatches = (view: 'start' | 'list') => {
+    setBatchView(view)
+    setSheet('batch')
+  }
+
+  /** Opens the gallery on the folder a batch saved into. */
+  const viewBatchImages = (job: BatchJob) => {
+    const batchFolder = folderOfBatch(job.id)
+    setSheet(null)
+    // Batches started without a folder choice save into SwarmUI's default "raw" folder.
+    useGallery.getState().load({ folder: batchFolder == undefined ? '' : batchFolder || 'raw', starredOnly: false })
+    onOpenGallery()
+  }
   const [width, height] = sizeFor(aspect, side)
 
   /** Makes a finished result the starting image for the next generation. */
@@ -177,16 +261,31 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
 
       <Stage onUseAsStart={useAsStart} />
 
-      {results.length > 1 && (
+      {(results.length > 1 || (running && results.length > 0)) && (
         <div className="no-scrollbar -mx-3 flex shrink-0 gap-2 overflow-x-auto px-3">
+          {running && (
+            <button
+              type="button"
+              aria-label="Show image in progress"
+              aria-pressed={viewingLive}
+              onClick={showLive}
+              className={cn('relative size-14 shrink-0 overflow-hidden rounded-xl bg-surface', viewingLive ? 'ring-2 ring-accent' : 'opacity-80')}
+            >
+              {preview && <img src={preview} alt="" className="size-full object-cover" />}
+              <span className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-[11px] font-medium tabular-nums">
+                <LoaderCircle className="size-4 animate-spin" />
+                {progress > 0 && `${Math.round(progress * 100)}%`}
+              </span>
+            </button>
+          )}
           {results.map((r, i) => (
             <button
               key={r.src.slice(-80) + i}
               type="button"
               aria-label={`Show image ${i + 1}`}
-              aria-pressed={i == current}
+              aria-pressed={i == current && !(running && viewingLive)}
               onClick={() => showResult(i)}
-              className={cn('size-14 shrink-0 overflow-hidden rounded-xl', i == current ? 'ring-2 ring-accent' : 'opacity-60')}
+              className={cn('size-14 shrink-0 overflow-hidden rounded-xl', i == current && !(running && viewingLive) ? 'ring-2 ring-accent' : 'opacity-60')}
             >
               <img src={serverUrl(r.src)} alt="" loading="lazy" className="size-full object-cover" />
             </button>
@@ -250,6 +349,7 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
           className="max-h-36 min-h-[4.25rem] w-full resize-none rounded-2xl bg-surface p-3.5 leading-snug outline-none [field-sizing:content] placeholder:text-muted focus:ring-1 focus:ring-accent"
         />
 
+        <BatchBanner onOpen={() => openBatches('list')} onView={viewBatchImages} />
         {(forever || previews) && (
           <div className="flex min-h-11 items-center gap-2 rounded-2xl bg-accent/15 pr-1 pl-3.5 text-sm">
             <span className="min-w-0 flex-1 truncate">{forever ? 'Generating forever' : 'Live previews on (not saved)'}</span>
@@ -284,7 +384,8 @@ export function GenerateScreen({ onOpenGallery }: { onOpenGallery: () => void })
       <SettingsSheet {...sheetProps('settings')} />
       <LoraPicker {...sheetProps('loras')} />
       <FolderPicker {...sheetProps('folder')} />
-      <GenerateMenu {...sheetProps('menu')} />
+      <GenerateMenu {...sheetProps('menu')} onBatch={() => openBatches('start')} />
+      <BatchSheet {...sheetProps('batch')} view={batchView} onViewChange={setBatchView} onViewImages={viewBatchImages} />
       <InitImageSheet {...sheetProps('init')} onPaint={() => setSheet('mask')} />
       {sheet == 'mask' && <MaskEditor onClose={() => setSheet('init')} />}
     </div>

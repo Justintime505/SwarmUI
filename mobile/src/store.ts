@@ -40,6 +40,43 @@ export function closestAspect(width: number, height: number): string {
 
 export type LoraChoice = { name: string; weight: number }
 
+/**
+ * Builds the SwarmUI generation parameters from the user's current choices: prompt, model, size, starting image, mask, LoRAs.
+ * Used by normal generations and by batches, so both send the same thing. The caller adds `images` and `seed`.
+ * `save` false leaves out the output folder, for images that are not kept.
+ */
+export function buildParams(s: BuildSource, options: { save: boolean }): Record<string, unknown> {
+  const [width, height] = sizeFor(s.aspect, s.side)
+  const params: Record<string, unknown> = {
+    prompt: s.prompt,
+    negativeprompt: s.negativePrompt,
+    model: s.model,
+    steps: s.steps,
+    cfgscale: s.cfgScale,
+    aspectratio: s.aspect,
+    width,
+    height,
+  }
+  if (s.initImage) {
+    params.initimage = s.initImage
+    params.initimagecreativity = s.initCreativity
+    if (s.maskImage) {
+      params.maskimage = s.maskImage
+      // Soften the mask edge so the repainted area blends into the rest.
+      params.maskblur = 4
+    }
+  }
+  if (s.folder && options.save) {
+    // Save into the chosen folder, with the date and time in the file name so files sort by age.
+    params.overrideoutpathformat = `${s.folder}/[year]-[month]-[day]-[hour][minute][request_time_inc]-[prompt]`
+  }
+  if (s.loras.length > 0) {
+    params.loras = s.loras.map((l) => cleanModelName(l.name)).join(',')
+    params.loraweights = s.loras.map((l) => l.weight).join(',')
+  }
+  return params
+}
+
 /** What the user has chosen for the next generation. Saved in the browser so it survives a reload. */
 type Settings = {
   prompt: string
@@ -71,6 +108,9 @@ type Settings = {
 export type MaskStroke = { size: number; points: number[] }
 
 /** A generated image. `temp` marks an unsaved live preview, which the next preview replaces. */
+/** The settings and runtime values that `buildParams` reads. */
+type BuildSource = Settings & Pick<Runtime, 'initImage' | 'maskImage'>
+
 export type ResultImage = { src: string; metadata: string | null; temp?: boolean }
 
 type Runtime = {
@@ -97,6 +137,8 @@ type Runtime = {
   results: ResultImage[]
   /** Index into `results` of the image being shown. */
   current: number
+  /** While generating: true shows the image in progress, false shows the finished image at `current`. */
+  viewingLive: boolean
   error: string | null
 }
 
@@ -112,9 +154,12 @@ type Actions = {
   /** Makes the folder choice follow the active profile: stores the current one and restores the one saved for `profile`. */
   applyProfileFolders: (profile: string) => void
   showResult: (index: number) => void
+  /** Goes back to watching the image that is being generated. */
+  showLive: () => void
   dismissError: () => void
   /** Starts a generation. `preview` makes a single unsaved image using the "Preview" preset, if the user has one. */
-  generate: (options?: { preview?: boolean }) => void
+  /** `auto` marks a run the app started by itself (the next "forever" image), which must not pull the view away from an image the user is looking at. */
+  generate: (options?: { preview?: boolean; auto?: boolean }) => void
   cancel: () => void
   toggleForever: () => void
   togglePreviews: () => Promise<void>
@@ -184,6 +229,7 @@ export const useStore = create<Settings & Runtime & Actions>()(
       preview: null,
       results: [],
       current: 0,
+      viewingLive: true,
       error: null,
 
       set: (patch) => set(patch),
@@ -256,7 +302,9 @@ export const useStore = create<Settings & Runtime & Actions>()(
         set({ savedFolders, foldersProfile: profile, folder: next.folder, customFolders: next.customFolders })
       },
 
-      showResult: (index) => set({ current: index }),
+      showResult: (index) => set({ current: index, viewingLive: false }),
+
+      showLive: () => set({ viewingLive: true }),
 
       dismissError: () => set({ error: null }),
 
@@ -266,45 +314,19 @@ export const useStore = create<Settings & Runtime & Actions>()(
           return
         }
         const isPreview = !!options?.preview
-        const imageCount = isPreview ? 1 : s.images
-        const [width, height] = sizeFor(s.aspect, s.side)
-        const params: Record<string, unknown> = {
-          images: imageCount,
-          prompt: s.prompt,
-          negativeprompt: s.negativePrompt,
-          model: s.model,
-          steps: s.steps,
-          cfgscale: s.cfgScale,
-          // Forever mode with a fixed seed would save the same image again and again, so it always randomises.
-          seed: s.forever && !isPreview ? -1 : s.seed,
-          aspectratio: s.aspect,
-          width,
-          height,
-        }
-        if (s.initImage) {
-          params.initimage = s.initImage
-          params.initimagecreativity = s.initCreativity
-          if (s.maskImage) {
-            params.maskimage = s.maskImage
-            // Soften the mask edge so the repainted area blends into the rest.
-            params.maskblur = 4
-          }
-        }
-        if (s.folder && !isPreview) {
-          // Save into the chosen folder, with the date and time in the file name so files sort by age.
-          params.overrideoutpathformat = `${s.folder}/[year]-[month]-[day]-[hour][minute][request_time_inc]-[prompt]`
-        }
-        if (s.loras.length > 0) {
-          params.loras = s.loras.map((l) => cleanModelName(l.name)).join(',')
-          params.loraweights = s.loras.map((l) => l.weight).join(',')
-        }
+        // Forever mode makes one image per run, so stopping it ends after the picture in progress, not after a whole multi-image run.
+        const imageCount = isPreview || s.forever ? 1 : s.images
+        const params = buildParams(s, { save: !isPreview })
+        params.images = imageCount
+        // Forever mode with a fixed seed would save the same image again and again, so it always randomises.
+        params.seed = s.forever && !isPreview ? -1 : s.seed
         if (isPreview) {
           lastPreviewKey = previewKey(s)
           Object.assign(params, previewPreset, { images: 1, donotsave: true })
         }
         const perImage: number[] = []
         let received = 0
-        set({ running: true, cancelling: false, statusText: 'Starting…', progress: 0, preview: null, error: null })
+        set({ running: true, cancelling: false, statusText: 'Starting…', progress: 0, preview: null, error: null, viewingLive: options?.auto ? s.viewingLive : true })
         closeSocket = startGeneration(params, {
           onStatus: (status) => {
             if (!get().cancelling) {
@@ -327,8 +349,13 @@ export const useStore = create<Settings & Runtime & Actions>()(
           onImage: (image, metadata, batchIndex) => {
             perImage[batchIndex] = 1
             // A live preview replaces the previous live preview instead of piling up in the results strip.
-            const earlier = get().results.filter((r) => !(isPreview && r.temp))
-            set({ results: [{ src: image, metadata, temp: isPreview }, ...earlier], current: 0, preview: null })
+            const before = get()
+            const earlier = before.results.filter((r) => !(isPreview && r.temp))
+            const results = [{ src: image, metadata, temp: isPreview }, ...earlier]
+            // If the user is looking at an older image, stay on it: new images are added in front, so its index shifts.
+            const keepSrc = before.viewingLive ? null : before.results[before.current]?.src
+            const current = keepSrc ? Math.max(0, results.findIndex((r) => r.src == keepSrc)) : 0
+            set({ results, current, preview: null })
             received++
             if (received >= imageCount) {
               // All images are in. SwarmUI takes a moment to close the socket itself, so finish now.
@@ -355,7 +382,7 @@ export const useStore = create<Settings & Runtime & Actions>()(
               // Let the screen show the finished image for a moment before the next run starts.
               setTimeout(() => {
                 if (get().forever) {
-                  get().generate()
+                  get().generate({ auto: true })
                 }
               }, 150)
             }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useBatches } from '@/batch-store'
 import { useModels } from '@/models-store'
 import { useProfiles } from '@/profiles-store'
 import { GalleryScreen } from '@/screens/GalleryScreen'
@@ -18,7 +19,8 @@ export default function App() {
 
   useEffect(() => {
     load()
-    loadProfiles()
+    // Batches are per profile, so find out which profile this is before asking for them.
+    loadProfiles().then(() => useBatches.getState().load())
   }, [load, loadProfiles])
 
   useEffect(() => {

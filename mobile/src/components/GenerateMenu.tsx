@@ -1,4 +1,4 @@
-import { CircleStop, Eye, Infinity as InfinityIcon, OctagonX, RefreshCcw, Sparkles, Type } from 'lucide-react'
+import { CircleStop, Eye, Infinity as InfinityIcon, Layers3, OctagonX, RefreshCcw, Sparkles, Type } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { api } from '@/api/client'
 import { Sheet } from '@/components/ui/sheet'
@@ -33,7 +33,7 @@ function Row({ icon, label, hint, active, danger, disabled, onClick }: { icon: R
 }
 
 /** The extra Generate options from the desktop UI's arrow menu, opened by long-pressing Generate. */
-export function GenerateMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function GenerateMenu({ open, onOpenChange, onBatch }: { open: boolean; onOpenChange: (open: boolean) => void; onBatch?: () => void }) {
   const running = useStore((s) => s.running)
   const forever = useStore((s) => s.forever)
   const previews = useStore((s) => s.previews)
@@ -95,7 +95,7 @@ export function GenerateMenu({ open, onOpenChange }: { open: boolean; onOpenChan
           <Row
             icon={<InfinityIcon className="size-5" />}
             label={forever ? 'Stop generating forever' : 'Generate forever'}
-            hint={forever ? 'The current image still finishes.' : 'Keeps making new images until you stop it. Uses a new random seed each time.'}
+            hint={forever ? 'Stops after the image in progress.' : 'Keeps making new images until you stop it. Uses a new random seed each time.'}
             active={forever}
             disabled={!model}
             onClick={run(() => store().toggleForever())}
@@ -108,6 +108,15 @@ export function GenerateMenu({ open, onOpenChange }: { open: boolean; onOpenChan
             disabled={!model}
             onClick={run(() => store().togglePreviews())}
           />
+          {onBatch && (
+            <Row
+              icon={<Layers3 className="size-5" />}
+              label="Generate a batch…"
+              hint="A set number of images with random seeds. Keeps going on the server if you close the app."
+              disabled={!model}
+              onClick={onBatch}
+            />
+          )}
           <Row icon={<RefreshCcw className="size-5" />} label="Interrupt and generate" hint="Stops the current image and starts again with the settings as they are now." disabled={!model} onClick={run(() => store().interruptAndGenerate())} />
           <Row icon={<CircleStop className="size-5" />} label="Interrupt current session" hint="Stops what this device started." danger onClick={run(() => store().interrupt(false))} />
           <Row icon={<OctagonX className="size-5" />} label="Interrupt all sessions" hint="Also stops generations started from other devices and the desktop page." danger onClick={run(() => store().interrupt(true))} />
