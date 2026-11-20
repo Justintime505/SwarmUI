@@ -36,3 +36,8 @@ venv/
 
 CLAUDE.md
 .claude/
+
+# Swarm Mobile (phone front end) build output and tooling
+src/wwwroot/mobile/
+mobile/node_modules/
+.playwright-mcp/

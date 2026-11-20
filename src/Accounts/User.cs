@@ -105,9 +105,19 @@ public class User
         }
     }
 
+    /// <summary>Whether this account is a profile: a user that has its own image library but shares everything else with the local user.</summary>
+    public bool IsProfile => UserID != SessionHandler.LocalUserID && Settings.Roles.Contains(WebServer.ProfileRoleID);
+
+    /// <summary>For a profile, the local user whose presets and saved data it shares. Null for every other account.</summary>
+    public User SharedFrom => IsProfile ? SessionHandlerSource.GetUser(SessionHandler.LocalUserID) : null;
+
     /// <summary>Returns the user generic-data for the given name, or null if not found.</summary>
     public string GetGenericData(string dataname, string name)
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.GetGenericData(dataname, name);
+        }
         lock (SessionHandlerSource.DBLock)
         {
             return SessionHandlerSource.GenericData.FindById($"{UserID}///${dataname}///{name.ToLowerFast()}")?.Data;
@@ -123,6 +133,10 @@ public class User
     /// <summary>Returns a list of all generic-data this user has saved.</summary>
     public List<SessionHandler.GenericDataStore> GetAllGenericData(string dataname)
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.GetAllGenericData(dataname);
+        }
         lock (SessionHandlerSource.DBLock)
         {
             string id = $"{UserID}///${dataname}///";
@@ -141,6 +155,11 @@ public class User
     /// <summary>Saves a new generic-data on the user's account.</summary>
     public void SaveGenericData(string dataname, string name, string data)
     {
+        if (SharedFrom is not null)
+        {
+            SharedFrom.SaveGenericData(dataname, name, data);
+            return;
+        }
         if (Program.NoPersist)
         {
             return;
@@ -159,6 +178,10 @@ public class User
     /// <summary>Deletes a user generic-data, returns true if anything was deleted.</summary>
     public bool DeleteGenericData(string dataname, string name)
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.DeleteGenericData(dataname, name);
+        }
         if (Program.NoPersist)
         {
             return false;
@@ -172,6 +195,10 @@ public class User
     /// <summary>Returns the user preset for the given name, or null if not found.</summary>
     public T2IPreset GetPreset(string name)
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.GetPreset(name);
+        }
         T2IPreset preset;
         lock (SessionHandlerSource.DBLock)
         {
@@ -189,6 +216,10 @@ public class User
     /// <summary>Returns a list of all presets this user has saved.</summary>
     public List<T2IPreset> GetAllPresets()
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.GetAllPresets();
+        }
         lock (SessionHandlerSource.DBLock)
         {
             try
@@ -219,6 +250,11 @@ public class User
     /// <summary>Saves a new preset on the user's account.</summary>
     public void SavePreset(T2IPreset preset)
     {
+        if (SharedFrom is not null)
+        {
+            SharedFrom.SavePreset(preset);
+            return;
+        }
         if (Program.NoPersist)
         {
             return;
@@ -242,6 +278,10 @@ public class User
     /// <summary>Deletes a user preset, returns true if anything was deleted.</summary>
     public bool DeletePreset(string name)
     {
+        if (SharedFrom is not null)
+        {
+            return SharedFrom.DeletePreset(name);
+        }
         if (Program.NoPersist)
         {
             return false;

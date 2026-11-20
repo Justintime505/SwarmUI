@@ -279,7 +279,16 @@ public class WebServer
         WebApp.UseWebSockets(new WebSocketOptions() { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         WebApp.MapRazorPages().DisableAntiforgery();
         timer.Check("[Web] core use calls");
-        WebApp.MapGet("/", () => Results.Redirect("Text2Image"));
+        WebApp.MapGet("/", (HttpContext context) =>
+        {
+            // Phones go to the mobile front end (built from the 'mobile/' folder), if it has been built. Mobile browsers include "Mobi" in their user agent.
+            string userAgent = context.Request.Headers.UserAgent.FirstOrDefault() ?? "";
+            if (userAgent.Contains("Mobi") && File.Exists("src/wwwroot/mobile/index.html"))
+            {
+                return Results.Redirect("mobile/index.html");
+            }
+            return Results.Redirect("Text2Image");
+        });
         WebApp.Map("/API/{*Call}", API.HandleAsyncRequest);
         WebApp.MapGet("/Output/{*Path}", ViewOutput);
         WebApp.MapGet("/View/{*Path}", ViewOutput);
@@ -503,12 +512,42 @@ public class WebServer
         {
             return WebUtil.GetValidLogin(context);
         }
+        User profileUser = GetProfileUserFor(context);
+        if (profileUser is not null)
+        {
+            return profileUser;
+        }
         string id = SessionHandler.LocalUserID;
         if (context.Request.Headers.TryGetValue("X-SWARM-USER_ID", out StringValues user_id))
         {
             id = user_id[0];
         }
         return id is null ? null : Program.Sessions.GetUser(id);
+    }
+
+    /// <summary>ID of the role that marks a user account as a profile (see the Profiles built-in extension).</summary>
+    public const string ProfileRoleID = "profile";
+
+    /// <summary>
+    /// When logins are not required, a browser can still carry a login cookie for a profile user (set by the Profiles extension after a PIN check).
+    /// Returns that profile's user, or null if the request has no valid profile cookie.
+    /// </summary>
+    public static User GetProfileUserFor(HttpContext context)
+    {
+        try
+        {
+            // Read the token directly rather than via GetValidLogin, whose localhost bypass would always answer with the local user.
+            User user = WebUtil.GetUserForSwarmToken(context, WebUtil.GetSwarmTokenFor(context));
+            if (user is not null && user.IsProfile)
+            {
+                return user;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logs.Verbose($"Failed to read profile cookie: {ex.ReadableString()}");
+        }
+        return null;
     }
 
     /// <summary>Returns the root folder for the user's output.</summary>
