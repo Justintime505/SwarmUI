@@ -1,5 +1,32 @@
 # SwarmUI
 
+> **This is a personal fork** of [mcmonkeyprojects/SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) that adds a phone-first web app and a few features built around it. Everything below the "Fork additions" section is the upstream README. For the original project, its support and its Discord, go upstream.
+
+## Fork additions
+
+- **Swarm Mobile:** a separate phone-friendly front end served at `/mobile/index.html`, covering generation, image to image, brush inpainting, LoRAs, a gallery and output folders. Phones that open the server's root address are sent to it automatically. See [mobile/README.md](mobile/README.md) for features and build steps.
+- **Profiles:** each person gets a private image library, optionally behind a 4 to 8 digit PIN, while models, LoRAs, presets and settings stay shared. There is a profile switcher on the desktop page too. This is household-level privacy, not hardened security.
+- **Background batches:** ask for up to 500 images, each with a new random seed. The batch runs on the server and keeps going with the browser closed. Batches are held in memory, so a server restart ends them.
+- **Model tags:** each model and LoRA remembers tags to add to the prompt and negative prompt, such as quality tags and trigger words.
+
+The server side of these lives in three built-in extensions (`src/BuiltinExtensions/Profiles`, `BatchJobs`, `ModelTags`), with unit tests in `SwarmUITests/`.
+
+### Quick start for the mobile app
+
+```sh
+cd mobile
+npm install
+npm run build
+```
+
+Then start SwarmUI as usual and open `http://<server>:7801/mobile/index.html` on a phone on the same network. The built app is not stored in git, so build it once after cloning.
+
+### Status
+
+Built for one household's use and tested in Chrome at phone size. It tracks upstream when convenient and is not affiliated with or supported by the SwarmUI maintainers. Much of the fork's code was written with an AI coding agent.
+
+----
+
 **SwarmUI v0.9.8 Beta**.
 
 *Formerly known as StableSwarmUI.*
